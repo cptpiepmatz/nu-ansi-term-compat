@@ -82,7 +82,9 @@ fn main() -> anyhow::Result<()> {
             step();
             for (semver, (crate_, version)) in versions {
                 for dependency in version.dependencies() {
-                    let Some(dependency_versions) = crate_version_index.get(dependency.crate_name()) else {
+                    let Some(dependency_versions) =
+                        crate_version_index.get(dependency.crate_name())
+                    else {
                         warn(format!(
                             "could not find dependency of {name}@{semver} in crates index: {}",
                             dependency.crate_name()
@@ -98,7 +100,12 @@ fn main() -> anyhow::Result<()> {
                         continue;
                     };
 
-                    let Some((dependency_semver, (dependency_crate, dependency_version))) = dependency_versions.iter().rev().find(|(dependency_semver,_)| req.matches(dependency_semver)) else {
+                    let Some((dependency_semver, (dependency_crate, dependency_version))) =
+                        dependency_versions
+                            .iter()
+                            .rev()
+                            .find(|(dependency_semver, _)| req.matches(dependency_semver))
+                    else {
                         warn(format!(
                             "could not find required dependency version of {name}@{semver}: {}@{}",
                             dependency.crate_name(),
@@ -107,7 +114,12 @@ fn main() -> anyhow::Result<()> {
                         continue;
                     };
 
-                    reverse_index.entry(dependency_crate.name()).or_default().entry(dependency_semver).or_default().insert((name, semver));
+                    reverse_index
+                        .entry(dependency_crate.name())
+                        .or_default()
+                        .entry(dependency_semver)
+                        .or_default()
+                        .insert((name, semver));
                 }
             }
 
