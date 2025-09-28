@@ -2,7 +2,6 @@ use anyhow::Context;
 use count_crates::count_crates;
 use crates_index::{Crate, DependencyKind, Version};
 use dashmap::{DashMap, DashSet};
-use krate_version::KrateVersion;
 use progress::Progress;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use std::{
@@ -14,11 +13,7 @@ use std::{
     sync::LazyLock,
 };
 
-use crate::krate::Krate;
-
 mod count_crates;
-mod krate;
-mod krate_version;
 mod progress;
 
 const SEARCH_CRATE: &str = "nu-ansi-term";

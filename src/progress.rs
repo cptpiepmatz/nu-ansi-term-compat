@@ -6,7 +6,8 @@ use std::{
 };
 
 use console::{Alignment, pad_str, style};
-use indicatif::{HumanDuration, ProgressBar, ProgressStyle};
+use human_repr::HumanDuration;
+use indicatif::{ProgressBar, ProgressStyle};
 
 const PADDING_WIDTH: usize = 12;
 const UPDATE_INTERVAL: Duration = Duration::from_millis(100);
@@ -120,7 +121,7 @@ impl Progress {
         let mut stderr = stderr();
         let _ = write!(stderr, "{prefix} {}", msg.into());
         if let Some(elapsed) = elapsed {
-            let _ = write!(stderr, " in {}", HumanDuration(elapsed));
+            let _ = write!(stderr, " in {}", elapsed.human_duration());
         }
         let _ = writeln!(stderr);
     }
