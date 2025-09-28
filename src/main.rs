@@ -85,6 +85,11 @@ fn main() -> anyhow::Result<()> {
                     continue;
                 }
 
+                // if dependency.is_optional() {
+                //     // maybe too aggressive
+                //     continue;
+                // }
+
                 let Some(dependency_versions) = index.get(dependency.crate_name()) else {
                     // warn(format!(
                     //     "could not find dependency of {name}@{semver} in crates index: {}",
@@ -192,7 +197,7 @@ fn main() -> anyhow::Result<()> {
     progress.finish(
         "Filtered",
         format!(
-            "reverse dependencies to latest version, found {} entries",
+            "reverse dependencies to latest version, reduced to {} entries",
             filtered_reverse_dependencies.len()
         ),
     );
@@ -216,8 +221,12 @@ fn main() -> anyhow::Result<()> {
                     return false;
                 };
 
-                let Some(crate_msrv) = version.rust_version() else { return true};
-                let Ok(crate_msrv) = semver::VersionReq::parse(crate_msrv) else { return true};
+                let Some(crate_msrv) = version.rust_version() else {
+                    return true;
+                };
+                let Ok(crate_msrv) = semver::VersionReq::parse(crate_msrv) else {
+                    return true;
+                };
 
                 crate_msrv.matches(&SEARCH_MSRV)
             })
@@ -227,7 +236,30 @@ fn main() -> anyhow::Result<()> {
     progress.finish(
         "Filtered",
         format!(
-            "reverse dependencies for msrv {SEARCH_MSRV}, found {}",
+            "reverse dependencies for msrv {SEARCH_MSRV}, reduced to {} entries",
+            filtered_reverse_dependencies.len()
+        ),
+    );
+
+    let (step, _) = progress.bar(
+        filtered_reverse_dependencies.len(),
+        "Filtering",
+        "reverse dependencies for used libraries",
+    );
+    let filtered_reverse_dependencies: HashSet<(&str, &semver::Version)> =
+        filtered_reverse_dependencies
+            .iter()
+            .filter(|(crate_name, crate_semver)| {
+                step();
+                reverse_index.get(crate_name).is_none()
+            })
+            .cloned()
+            .collect();
+    drop(step);
+    progress.finish(
+        "Filtered",
+        format!(
+            "reverse dependencies for used libraries, reduced to {} entries",
             filtered_reverse_dependencies.len()
         ),
     );

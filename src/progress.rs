@@ -73,9 +73,9 @@ impl Progress {
         (
             || self.progress_bar.iter().for_each(|pb| pb.inc(1)),
             |msg| {
-                let Some(pb) = &self.progress_bar else {return};
+                let Some(pb) = &self.progress_bar else { return };
                 pb.suspend(|| self.println(console::Color::Yellow, "Warning", msg, None));
-            }
+            },
         )
     }
 
