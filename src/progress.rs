@@ -18,9 +18,11 @@ const SPINNER_STYLE: LazyLock<ProgressStyle> = LazyLock::new(|| {
 });
 
 const BAR_STYLE: LazyLock<ProgressStyle> = LazyLock::new(|| {
-    ProgressStyle::with_template("{prefix:>12.cyan.bold} [{bar}] {human_pos}/{human_len}: {msg}... ({eta} remaining)")
-        .expect("is valid template")
-        .progress_chars("=> ")
+    ProgressStyle::with_template(
+        "{prefix:>12.cyan.bold} [{bar}] {human_pos}/{human_len}: {msg}... ({eta} remaining)",
+    )
+    .expect("is valid template")
+    .progress_chars("=> ")
 });
 
 #[derive(Debug)]
@@ -60,14 +62,20 @@ impl Progress {
         total: usize,
         prefix: impl Into<Cow<'static, str>>,
         msg: impl Into<Cow<'static, str>>,
-    ) -> impl Fn() {
+    ) -> (impl Fn(), impl Fn(String)) {
         let bar = ProgressBar::new(total as u64)
             .with_prefix(prefix)
             .with_message(msg)
             .with_style(BAR_STYLE.clone());
         bar.enable_steady_tick(UPDATE_INTERVAL);
         self.progress_bar = Some(bar);
-        || self.progress_bar.iter().for_each(|pb| pb.inc(1))
+        (
+            || self.progress_bar.iter().for_each(|pb| pb.inc(1)),
+            |msg| {
+                let Some(pb) = &self.progress_bar else {return};
+                pb.suspend(|| self.println(console::Color::Yellow, "Warning", msg, None));
+            }
+        )
     }
 
     pub fn finish(
@@ -78,10 +86,7 @@ impl Progress {
         self.log(console::Color::Green, prefix, msg)
     }
 
-    pub fn warning(
-        &mut self,
-        msg: impl Into<Cow<'static, str>>
-    ) {
+    pub fn finish_warning(&mut self, msg: impl Into<Cow<'static, str>>) {
         self.log(console::Color::Yellow, "Warning", msg)
     }
 
@@ -96,6 +101,17 @@ impl Progress {
             progress_bar.finish_and_clear();
         }
 
+        let elapsed = self.progress_bar.as_ref().map(|pb| pb.elapsed());
+        self.println(color, prefix, msg, elapsed);
+    }
+
+    fn println(
+        &self,
+        color: console::Color,
+        prefix: impl Into<Cow<'static, str>>,
+        msg: impl Into<Cow<'static, str>>,
+        elapsed: Option<Duration>,
+    ) {
         let prefix = prefix.into();
         let prefix = style(pad_str(&prefix, PADDING_WIDTH, Alignment::Right, None))
             .bold()
@@ -103,7 +119,7 @@ impl Progress {
 
         let mut stderr = stderr();
         let _ = write!(stderr, "{prefix} {}", msg.into());
-        if let Some(elapsed) = self.progress_bar.as_ref().map(|pb| pb.elapsed()) {
+        if let Some(elapsed) = elapsed {
             let _ = write!(stderr, " in {}", HumanDuration(elapsed));
         }
         let _ = writeln!(stderr);

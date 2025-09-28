@@ -1,13 +1,15 @@
+use anyhow::Context;
 use count_crates::count_crates;
-use crate_version::CrateVersion;
 use crates_index::{Crate, Version};
 use dashmap::{DashMap, DashSet};
+use krate_version::KrateVersion;
 use progress::Progress;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use std::{
-    collections::{HashMap, HashSet, VecDeque},
+    collections::{BTreeMap, HashMap, HashSet, VecDeque},
     fs::File,
     io::{BufReader, BufWriter},
+    ops::Deref,
     path::{Path, PathBuf},
     sync::LazyLock,
 };
@@ -15,8 +17,8 @@ use std::{
 use crate::krate::Krate;
 
 mod count_crates;
-mod crate_version;
 mod krate;
+mod krate_version;
 mod progress;
 
 const SEARCH_CRATE: &str = "nu-ansi-term";
@@ -37,100 +39,82 @@ fn main() -> anyhow::Result<()> {
     let total_crate_count = count_crates(git_index.path())?;
     progress.finish("Counted", format!("a total of {total_crate_count} crates"));
 
-    let step = progress.bar(total_crate_count, "Parsing", "crates registry");
-    let krates: HashMap<String, Krate> = git_index
+    let (step, _) = progress.bar(total_crate_count, "Parsing", "crates registry");
+    let crates: Vec<Crate> = git_index
         .crates_parallel()
-        .map(|krate| {
+        .map(|crate_| {
             step();
-            krate
-                .map_err(anyhow::Error::new)
-                .map(|krate| (krate.name().to_string(), krate.into()))
+            crate_.map_err(anyhow::Error::new)
         })
         .collect::<anyhow::Result<_>>()?;
     drop(step);
     progress.finish("Parsed", "crates registry");
 
-    let reverse_index: DashMap<String, DashSet<CrateVersion>> = 'make_reverse_index: {
-        'try_file: {
-            let Ok(file) = File::open(REVERSE_INDEX_PATH.as_path()) else {
-                break 'try_file;
-            };
-            progress.spinner("Loading", "reverse index cache");
-            let reader = BufReader::new(file);
-            let Result::Ok(reverse_index) = serde_json::from_reader(reader) else {
-                progress.warning("could not deserialize reverse index cache");
-                break 'try_file;
-            };
-
-            let reverse_index: DashMap<String, DashSet<CrateVersion>> = reverse_index;
-            progress.finish(
-                "Loaded",
-                format!("reverse index cache with {} entries", reverse_index.len()),
-            );
-            break 'make_reverse_index reverse_index;
-        }
-
-        let reverse_index = DashMap::new();
-        let step = progress.bar(total_crate_count, "Indexing", "dependents");
-        git_index.crates_parallel().try_for_each(|crate_| {
-            let crate_ = crate_?;
-            let version = crate_.most_recent_version();
-            for dependency in version.dependencies() {
-                let key = dependency.crate_name().to_owned();
-                reverse_index
-                    .entry(key)
-                    .or_insert_with(DashSet::new)
-                    .insert(version.clone().into());
-            }
-
+    let (step, _) = progress.bar(total_crate_count, "Indexing", "crate versions");
+    let crate_version_index: HashMap<&str, BTreeMap<semver::Version, (&Crate, &Version)>> = crates
+        .par_iter()
+        .map(|crate_| {
             step();
-            anyhow::Result::<()>::Ok(())
-        })?;
-        drop(step);
-        progress.finish(
-            "Indexed",
-            format!("{} reverse dependencies", reverse_index.len()),
-        );
+            let versions = crate_
+                .versions()
+                .iter()
+                .map(move |version| {
+                    anyhow::Result::<_>::Ok((
+                        semver::Version::parse(version.version()).with_context(|| {
+                            format!("expected {:?} to be valid semver", version.version())
+                        })?,
+                        (crate_, version),
+                    ))
+                })
+                .collect::<anyhow::Result<_>>()?;
+            anyhow::Result::<_>::Ok((crate_.name(), versions))
+        })
+        .collect::<anyhow::Result<_>>()?;
+    drop(step);
+    progress.finish("Indexed", "crate versions");
 
-        progress.spinner("Writing", "reverse index cache");
-        let writer = BufWriter::new(File::create(REVERSE_INDEX_PATH.as_path())?);
-        serde_json::to_writer(writer, &reverse_index)?;
-        progress.finish("Written", "reverse index cache");
+    let (step, warn) = progress.bar(total_crate_count, "Indexing", "reverse dependencies");
+    let reverse_index: DashMap<&str, DashMap<&semver::Version, DashSet<(&str, &semver::Version)>>> =
+        DashMap::new();
+    crate_version_index
+        .par_iter()
+        .try_for_each(|(name, versions)| {
+            step();
+            for (semver, (crate_, version)) in versions {
+                for dependency in version.dependencies() {
+                    let Some(dependency_versions) = crate_version_index.get(dependency.crate_name()) else {
+                        warn(format!(
+                            "could not find dependency of {name}@{semver} in crates index: {}",
+                            dependency.crate_name()
+                        ));
+                        continue;
+                    };
+                    let Ok(req) = semver::VersionReq::parse(dependency.requirement()) else {
+                        warn(format!(
+                            "could not parse dependency req of {name}@{semver}: {}@{}",
+                            dependency.crate_name(),
+                            dependency.requirement()
+                        ));
+                        continue;
+                    };
 
-        reverse_index
-    };
+                    let Some((dependency_semver, (dependency_crate, dependency_version))) = dependency_versions.iter().rev().find(|(dependency_semver,_)| req.matches(dependency_semver)) else {
+                        warn(format!(
+                            "could not find required dependency version of {name}@{semver}: {}@{}",
+                            dependency.crate_name(),
+                            req
+                        ));
+                        continue;
+                    };
 
-    let reverse_dependencies = {
-        progress.spinner("Walking", "reverse dependencies");
-
-        let reverse_dependencies: DashSet<CrateVersion> = DashSet::new();
-        let mut visited = HashSet::new();
-        let mut queue = VecDeque::new();
-
-        visited.insert(SEARCH_CRATE.to_string());
-        queue.push_back(SEARCH_CRATE.to_string());
-
-        while let Some(name) = queue.pop_front() {
-            if let Some(dependents) = reverse_index.get(&name) {
-                for dependent in dependents.value().iter() {
-                    let dependent = dependent.key();
-                    if reverse_dependencies.insert(dependent.clone().into()) {
-                        let name = dependent.as_inner().name();
-                        if visited.insert(name.to_string()) {
-                            queue.push_back(name.to_string());
-                        }
-                    }
+                    reverse_index.entry(dependency_crate.name()).or_default().entry(dependency_semver).or_default().insert((name, semver));
                 }
             }
-        }
 
-        progress.finish(
-            "Walked",
-            format!("reverse dependencies, found {}", reverse_dependencies.len()),
-        );
-
-        reverse_dependencies
-    };
+            anyhow::Result::<_>::Ok(())
+        })?;
+    drop((step, warn));
+    progress.finish("Indexed", "reverse dependencies");
 
     Ok(())
 }
