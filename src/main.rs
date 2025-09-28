@@ -1,6 +1,6 @@
 use anyhow::Context;
 use count_crates::count_crates;
-use crates_index::{Crate, Version};
+use crates_index::{Crate, DependencyKind, Version};
 use dashmap::{DashMap, DashSet};
 use krate_version::KrateVersion;
 use progress::Progress;
@@ -57,7 +57,7 @@ fn main() -> anyhow::Result<()> {
             step();
             let versions = crate_
                 .versions()
-                .iter()
+                .par_iter()
                 .map(move |version| {
                     anyhow::Result::<_>::Ok((
                         semver::Version::parse(version.version()).with_context(|| {
@@ -81,36 +81,45 @@ fn main() -> anyhow::Result<()> {
         .try_for_each(|(name, versions)| {
             step();
             for (semver, (crate_, version)) in versions {
+                if version.is_yanked() {
+                    continue;
+                }
+
                 for dependency in version.dependencies() {
+                    if let DependencyKind::Dev = dependency.kind() {
+                        continue;
+                    }
+
                     let Some(dependency_versions) =
                         crate_version_index.get(dependency.crate_name())
                     else {
-                        warn(format!(
-                            "could not find dependency of {name}@{semver} in crates index: {}",
-                            dependency.crate_name()
-                        ));
+                        // warn(format!(
+                        //     "could not find dependency of {name}@{semver} in crates index: {}",
+                        //     dependency.crate_name()
+                        // ));
                         continue;
                     };
                     let Ok(req) = semver::VersionReq::parse(dependency.requirement()) else {
-                        warn(format!(
-                            "could not parse dependency req of {name}@{semver}: {}@{}",
-                            dependency.crate_name(),
-                            dependency.requirement()
-                        ));
+                        // warn(format!(
+                        //     "could not parse dependency req of {name}@{semver}: {}@{}",
+                        //     dependency.crate_name(),
+                        //     dependency.requirement()
+                        // ));
                         continue;
                     };
 
                     let Some((dependency_semver, (dependency_crate, dependency_version))) =
-                        dependency_versions
-                            .iter()
-                            .rev()
-                            .find(|(dependency_semver, _)| req.matches(dependency_semver))
+                        dependency_versions.iter().rev().find(
+                            |(dependency_semver, (_, dependency_version))| {
+                                req.matches(dependency_semver) && !dependency_version.is_yanked()
+                            },
+                        )
                     else {
-                        warn(format!(
-                            "could not find required dependency version of {name}@{semver}: {}@{}",
-                            dependency.crate_name(),
-                            req
-                        ));
+                        // warn(format!(
+                        //     "could not find required dependency version of {name}@{semver}: {}@{}",
+                        //     dependency.crate_name(),
+                        //     req
+                        // ));
                         continue;
                     };
 
