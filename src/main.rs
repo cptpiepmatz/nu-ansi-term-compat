@@ -17,10 +17,12 @@ mod count_crates;
 mod progress;
 
 const SEARCH_CRATE: &str = "nu-ansi-term";
+const SEARCH_REQ: LazyLock<semver::VersionReq> =
+    LazyLock::new(|| semver::VersionReq::parse("^0.50").expect("valid version req"));
+const SEARCH_MSRV: semver::Version = semver::Version::new(1, 62, 1);
+
 static REGISTRY_PATH: LazyLock<PathBuf> =
     LazyLock::new(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("registry"));
-static REVERSE_INDEX_PATH: LazyLock<PathBuf> =
-    LazyLock::new(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("reverse_index.json"));
 
 fn main() -> anyhow::Result<()> {
     let mut progress = Progress::new();
@@ -46,7 +48,7 @@ fn main() -> anyhow::Result<()> {
     progress.finish("Parsed", "crates registry");
 
     let (step, _) = progress.bar(total_crate_count, "Indexing", "crate versions");
-    let crate_version_index: HashMap<&str, BTreeMap<semver::Version, (&Crate, &Version)>> = crates
+    let index: HashMap<&str, BTreeMap<semver::Version, (&Crate, &Version)>> = crates
         .par_iter()
         .map(|crate_| {
             step();
@@ -71,66 +73,168 @@ fn main() -> anyhow::Result<()> {
     let (step, warn) = progress.bar(total_crate_count, "Indexing", "reverse dependencies");
     let reverse_index: DashMap<&str, DashMap<&semver::Version, DashSet<(&str, &semver::Version)>>> =
         DashMap::new();
-    crate_version_index
-        .par_iter()
-        .try_for_each(|(name, versions)| {
-            step();
-            for (semver, (crate_, version)) in versions {
-                if version.is_yanked() {
+    index.par_iter().try_for_each(|(name, versions)| {
+        step();
+        for (semver, (crate_, version)) in versions {
+            if version.is_yanked() {
+                continue;
+            }
+
+            for dependency in version.dependencies() {
+                if let DependencyKind::Dev = dependency.kind() {
                     continue;
                 }
 
-                for dependency in version.dependencies() {
-                    if let DependencyKind::Dev = dependency.kind() {
-                        continue;
-                    }
+                let Some(dependency_versions) = index.get(dependency.crate_name()) else {
+                    // warn(format!(
+                    //     "could not find dependency of {name}@{semver} in crates index: {}",
+                    //     dependency.crate_name()
+                    // ));
+                    continue;
+                };
+                let Ok(req) = semver::VersionReq::parse(dependency.requirement()) else {
+                    // warn(format!(
+                    //     "could not parse dependency req of {name}@{semver}: {}@{}",
+                    //     dependency.crate_name(),
+                    //     dependency.requirement()
+                    // ));
+                    continue;
+                };
 
-                    let Some(dependency_versions) =
-                        crate_version_index.get(dependency.crate_name())
-                    else {
-                        // warn(format!(
-                        //     "could not find dependency of {name}@{semver} in crates index: {}",
-                        //     dependency.crate_name()
-                        // ));
-                        continue;
-                    };
-                    let Ok(req) = semver::VersionReq::parse(dependency.requirement()) else {
-                        // warn(format!(
-                        //     "could not parse dependency req of {name}@{semver}: {}@{}",
-                        //     dependency.crate_name(),
-                        //     dependency.requirement()
-                        // ));
-                        continue;
-                    };
+                let Some((dependency_semver, (dependency_crate, dependency_version))) =
+                    dependency_versions.iter().rev().find(
+                        |(dependency_semver, (_, dependency_version))| {
+                            req.matches(dependency_semver) && !dependency_version.is_yanked()
+                        },
+                    )
+                else {
+                    // warn(format!(
+                    //     "could not find required dependency version of {name}@{semver}: {}@{}",
+                    //     dependency.crate_name(),
+                    //     req
+                    // ));
+                    continue;
+                };
 
-                    let Some((dependency_semver, (dependency_crate, dependency_version))) =
-                        dependency_versions.iter().rev().find(
-                            |(dependency_semver, (_, dependency_version))| {
-                                req.matches(dependency_semver) && !dependency_version.is_yanked()
-                            },
-                        )
-                    else {
-                        // warn(format!(
-                        //     "could not find required dependency version of {name}@{semver}: {}@{}",
-                        //     dependency.crate_name(),
-                        //     req
-                        // ));
-                        continue;
-                    };
-
-                    reverse_index
-                        .entry(dependency_crate.name())
-                        .or_default()
-                        .entry(dependency_semver)
-                        .or_default()
-                        .insert((name, semver));
-                }
+                reverse_index
+                    .entry(dependency_crate.name())
+                    .or_default()
+                    .entry(dependency_semver)
+                    .or_default()
+                    .insert((name, semver));
             }
+        }
 
-            anyhow::Result::<_>::Ok(())
-        })?;
+        anyhow::Result::<_>::Ok(())
+    })?;
     drop((step, warn));
     progress.finish("Indexed", "reverse dependencies");
+
+    progress.spinner(
+        "Walking",
+        format!("reverse dependencies for {SEARCH_CRATE}"),
+    );
+    let mut reverse_dependencies = HashSet::<(&str, &semver::Version)>::new();
+    let mut queue = VecDeque::<(&str, &semver::Version)>::new();
+    if let Some(versions) = index.get(SEARCH_CRATE) {
+        for (semver, (crate_, _)) in versions
+            .iter()
+            .filter(|(semver, _)| SEARCH_REQ.matches(semver))
+        {
+            queue.push_back((crate_.name(), semver));
+        }
+    }
+    while let Some((crate_name, semver)) = queue.pop_front() {
+        if let Some(versions) = reverse_index.get(crate_name) {
+            if let Some(version) = versions.get(semver) {
+                let dependents = version.value();
+                for dependent in dependents.iter() {
+                    let dependent = *dependent.key();
+                    if reverse_dependencies.insert(dependent) {
+                        queue.push_back(dependent);
+                    }
+                }
+            }
+        }
+    }
+    progress.finish(
+        "Walked",
+        format!(
+            "reverse dependencies for {SEARCH_CRATE}, found {} entries",
+            reverse_dependencies.len()
+        ),
+    );
+
+    let (step, _) = progress.bar(
+        reverse_dependencies.len(),
+        "Filtering",
+        "reverse dependencies for latest versions",
+    );
+    let filtered_reverse_dependencies: HashSet<(&str, &semver::Version)> = reverse_dependencies
+        .par_iter()
+        .filter(|(crate_name, crate_semver)| {
+            step();
+            let Some(versions) = index.get(crate_name) else {
+                return false;
+            };
+            let Some((latest_semver, _)) = versions
+                .iter()
+                .rev()
+                .find(|(_, (_, version))| !version.is_yanked())
+            else {
+                return false;
+            };
+            latest_semver.eq(crate_semver)
+        })
+        .cloned()
+        .collect();
+    drop(step);
+    progress.finish(
+        "Filtered",
+        format!(
+            "reverse dependencies to latest version, found {} entries",
+            filtered_reverse_dependencies.len()
+        ),
+    );
+
+    let (step, _) = progress.bar(
+        filtered_reverse_dependencies.len(),
+        "Filtering",
+        format!("reverse dependencies for msrv {SEARCH_MSRV}"),
+    );
+    let filtered_reverse_dependencies: HashSet<(&str, &semver::Version)> =
+        filtered_reverse_dependencies
+            .iter()
+            .filter(|(crate_name, crate_semver)| {
+                step();
+
+                let Some(versions) = index.get(crate_name) else {
+                    return false;
+                };
+
+                let Some((crate_, version)) = versions.get(crate_semver) else {
+                    return false;
+                };
+
+                let Some(crate_msrv) = version.rust_version() else { return true};
+                let Ok(crate_msrv) = semver::VersionReq::parse(crate_msrv) else { return true};
+
+                crate_msrv.matches(&SEARCH_MSRV)
+            })
+            .cloned()
+            .collect();
+    drop(step);
+    progress.finish(
+        "Filtered",
+        format!(
+            "reverse dependencies for msrv {SEARCH_MSRV}, found {}",
+            filtered_reverse_dependencies.len()
+        ),
+    );
+
+    let file = File::create("reverse_dependencies.json").unwrap();
+    let writer = BufWriter::new(file);
+    serde_json::to_writer(writer, &filtered_reverse_dependencies).unwrap();
 
     Ok(())
 }
