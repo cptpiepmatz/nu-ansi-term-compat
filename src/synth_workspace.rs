@@ -1,12 +1,15 @@
-use std::{collections::BTreeMap, path::Path};
+use std::{
+    collections::BTreeMap,
+    path::{Path, PathBuf},
+};
 
 use cargo::{
     GlobalContext,
     core::{
         Dependency, Manifest, Package, PackageId, SourceId, Summary, Workspace, WorkspaceConfig,
-        dependency::DepKind, manifest::ManifestMetadata,
+        WorkspaceRootConfig, dependency::DepKind, manifest::ManifestMetadata,
     },
-    util::interning::InternedString,
+    util::{Filesystem, interning::InternedString},
 };
 use cargo_util_schemas::manifest::RustVersion;
 use crates_index::{Crate, DependencyKind, Version};
@@ -27,8 +30,20 @@ fn synth_package<'gctx>(
 ) -> anyhow::Result<Package> {
     Ok(Package::new(
         synth_manifest(crate_, version, gctx)?,
-        Path::new(env!("CARGO_MANIFEST_PATH")),
+        &synth_manifest_path(crate_, version, gctx),
     ))
+}
+
+fn synth_manifest_path<'gctx>(
+    crate_: &Crate,
+    version: &Version,
+    gctx: &'gctx GlobalContext,
+) -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("lock-files")
+        .join(crate_.name())
+        .join(version.version())
+        .join("Cargo.toml")
 }
 
 fn synth_manifest<'gctx>(
@@ -152,6 +167,20 @@ fn synth_features<'gctx>(
         })
         .collect()
 }
+
+// fn synth_workspace_config<'gctx>(
+//     crate_: &Crate,
+//     version: &Version,
+//     gctx: &'gctx GlobalContext,
+// ) -> WorkspaceConfig {
+//     let root_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+//         .join("lock-files")
+//         .join(crate_.name())
+//         .join(version.version());
+//     WorkspaceConfig::Root(WorkspaceRootConfig::new(
+//         &root_dir, &None, &None, &None, &None, &None,
+//     ))
+// }
 
 fn synth_rust_version<'gctx>(
     crate_: &Crate,

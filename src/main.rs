@@ -1,8 +1,15 @@
 use anyhow::Context;
 use cargo::{
+    GlobalContext,
     core::{
-        compiler::{CompileKind, CompileTarget, RustcTargetData}, registry::PackageRegistry, resolver::{CliFeatures, ForceAllTargets, HasDevUnits}, Manifest, Shell, SourceId, Summary
-    }, sources::SourceConfigMap, util::{context::Definition, ConfigValue}, GlobalContext
+        Manifest, Shell, SourceId, Summary,
+        compiler::{CompileKind, CompileTarget, RustcTargetData},
+        registry::PackageRegistry,
+        resolver::{CliFeatures, ForceAllTargets, HasDevUnits},
+    },
+    ops::write_pkg_lockfile,
+    sources::SourceConfigMap,
+    util::{ConfigValue, Filesystem, context::Definition},
 };
 use count_crates::count_crates;
 use crates_index::{Crate, DependencyKind, Version};
@@ -11,7 +18,18 @@ use progress::Progress;
 use rayon::iter::{IntoParallelRefIterator, ParallelBridge, ParallelIterator};
 use serde_spanned::Spanned;
 use std::{
-    cell::LazyCell, collections::{BTreeMap, HashMap, HashSet, VecDeque}, env, fs::File, io::{BufReader, BufWriter}, ops::Deref, path::{Path, PathBuf}, sync::{atomic::{AtomicUsize, Ordering}, LazyLock}, thread
+    cell::LazyCell,
+    collections::{BTreeMap, HashMap, HashSet, VecDeque},
+    env,
+    fs::File,
+    io::{BufReader, BufWriter},
+    ops::Deref,
+    path::{Path, PathBuf},
+    sync::{
+        LazyLock,
+        atomic::{AtomicUsize, Ordering},
+    },
+    thread,
 };
 use url::Url;
 
@@ -35,10 +53,10 @@ thread_local! {
     static GLOBAL_CONTEXT: LazyCell<anyhow::Result<GlobalContext>> = LazyCell::new(|| {
         let id = NEXT_THREAD_ID.fetch_add(1, Ordering::Relaxed);
         let cargo_home = format!("{}/cargo-homes/worker-{:02}", env!("CARGO_MANIFEST_DIR"), id);
-        
+
         let shell = Shell::new();
         let cwd = env::current_dir().context("couldn't get the current directory of the process")?;
-        
+
         let mut gctx = GlobalContext::new(shell, cwd, cargo_home.into());
 
         let def = Definition::Path(file!().into());
@@ -75,7 +93,7 @@ thread_local! {
                 ),
             ),
         ]))?;
-        gctx.configure(0, false, None, true, false, true, &None, &[], &[])?;
+        gctx.configure(0, true, None, false, false, true, &None, &[], &[])?;
         Ok(gctx)
     });
 }
@@ -132,11 +150,16 @@ fn main() -> anyhow::Result<()> {
             match versions
                 .iter()
                 .rev()
-                .find(|(_, (_, version))| !version.is_yanked()) {
-                    Some(version) => Some(version),
-                    None => {step(); None}
+                .find(|(_, (_, version))| !version.is_yanked())
+            {
+                Some(version) => Some(version),
+                None => {
+                    step();
+                    None
                 }
+            }
         })
+        .take(10)
         .par_bridge()
         .try_for_each(|(semver, (crate_, version))| {
             step();
@@ -161,8 +184,12 @@ fn main() -> anyhow::Result<()> {
                     &[],
                     false,
                 );
-                if let Err(err) = resolve {
-                    warn(err.to_string());
+
+                match resolve {
+                    Err(err) => warn(err.to_string()),
+                    Ok(mut resolve) => {
+                        write_pkg_lockfile(&workspace, &mut resolve)?;
+                    }
                 }
 
                 anyhow::Result::<_>::Ok(())
