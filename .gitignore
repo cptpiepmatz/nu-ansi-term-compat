@@ -1,4 +1,5 @@
 /target
-/registry
 
+/index
+/cargo-homes
 /*.json
