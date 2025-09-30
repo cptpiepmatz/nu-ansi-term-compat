@@ -225,6 +225,7 @@ enum ResolveErrorKind {
     AllPossibleVersionsConflictWithPreviouslySelected,
     NoMatchingPackageFound,
     CandidateVersionsFoundDidntMatch,
+    FeatureConflict,
 }
 
 impl ResolveError {
@@ -235,10 +236,14 @@ impl ResolveError {
     ) -> Result<ResolveError, String> {
         let value = value.to_string();
         let kind = 'kind: {
+            if value.contains("failed to select a version for")
+                && value.contains("which could resolve this conflict")
+            {
+                break 'kind Some(ResolveErrorKind::FeatureConflict);
+            }
+
             if value.contains("candidate versions found which didn't match") {
-                break 'kind Some(
-                    ResolveErrorKind::CandidateVersionsFoundDidntMatch,
-                );
+                break 'kind Some(ResolveErrorKind::CandidateVersionsFoundDidntMatch);
             }
 
             if value.contains("all possible versions conflict with previously selected packages") {
