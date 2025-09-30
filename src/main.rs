@@ -191,7 +191,14 @@ fn main() -> anyhow::Result<()> {
             anyhow::Result::<_>::Ok(())
         })?;
     drop((step, warn));
-    progress.finish("Resolved", format!("{} crate dependencies", index.len()));
+    progress.finish(
+        "Resolved",
+        format!(
+            "{} crate dependencies, {} unresolvable",
+            index.len(),
+            resolve_errors.lock().len()
+        ),
+    );
 
     // let (step, warn) = progress.bar(total_crate_count, "Indexing", "reverse dependencies");
     // let reverse_index: DashMap<&str, DashMap<&semver::Version, DashSet<(&str, &semver::Version)>>> =
