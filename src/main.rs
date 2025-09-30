@@ -124,6 +124,7 @@ fn main() -> anyhow::Result<()> {
 
     let (step, warn) = progress.bar(index.len(), "Resolving", "crate dependencies");
     let resolve_errors = Mutex::<Vec<ResolveError>>::default();
+    let dependents = Mutex::<Vec<&str>>::default();
     index
         .iter()
         .flat_map(|(crate_name, versions)| {
@@ -191,8 +192,13 @@ fn main() -> anyhow::Result<()> {
                         }
                     };
 
-                    // let uses_nu_ansi_term = resolve.iter().find(|package_id| package_id.name().as_str() == "nu-ansi-term");
-                    // println!("{} uses nu-ansi-term? {}", crate_.name(), uses_nu_ansi_term.is_some());
+                    if resolve
+                        .iter()
+                        .find(|package_id| package_id.name().as_str() == SEARCH_CRATE)
+                        .is_some()
+                    {
+                        dependents.lock().push(crate_name);
+                    }
 
                     anyhow::Result::<_>::Ok(())
                 })
@@ -203,8 +209,9 @@ fn main() -> anyhow::Result<()> {
     progress.finish(
         "Resolved",
         format!(
-            "{} crate dependencies, {} unresolvable",
+            "{} crate dependencies, {} dependents, {} unresolvable",
             index.len(),
+            dependents.lock().len(),
             resolve_errors.lock().len()
         ),
     );
