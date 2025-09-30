@@ -16,38 +16,37 @@ use crates_index::{Crate, DependencyKind, Version};
 use toml::Spanned;
 
 pub fn synth_workspace<'gctx>(
-    crate_: &Crate,
+    crate_name: &str,
     version: &Version,
     gctx: &'gctx GlobalContext,
 ) -> anyhow::Result<Workspace<'gctx>> {
-    Workspace::ephemeral(synth_package(crate_, version, gctx)?, gctx, None, true)
+    Workspace::ephemeral(synth_package(crate_name, version, gctx)?, gctx, None, true)
 }
 
 fn synth_package<'gctx>(
-    crate_: &Crate,
+    crate_name: &str,
     version: &Version,
     gctx: &'gctx GlobalContext,
 ) -> anyhow::Result<Package> {
     Ok(Package::new(
-        synth_manifest(crate_, version, gctx)?,
-        &synth_manifest_path(crate_, version, gctx),
+        synth_manifest(crate_name, version, gctx)?,
+        &synth_manifest_path(crate_name, version, gctx),
     ))
 }
 
 fn synth_manifest_path<'gctx>(
-    crate_: &Crate,
+    crate_name: &str,
     version: &Version,
     gctx: &'gctx GlobalContext,
 ) -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("lock-files")
-        .join(crate_.name())
+    crate::LOCK_FILES_PATH
+        .join(crate_name)
         .join(version.version())
         .join("Cargo.toml")
 }
 
 fn synth_manifest<'gctx>(
-    crate_: &Crate,
+    crate_name: &str,
     version: &Version,
     gctx: &'gctx GlobalContext,
 ) -> anyhow::Result<Manifest> {
@@ -56,14 +55,14 @@ fn synth_manifest<'gctx>(
         Spanned::new(0..0, Default::default()).into(),
         Default::default(),
         Default::default(),
-        synth_summary(crate_, version, gctx)?,
+        synth_summary(crate_name, version, gctx)?,
         Default::default(),
         Default::default(),
         Default::default(),
         Default::default(),
         Default::default(),
         Default::default(),
-        synth_manifest_metadata(crate_, version, gctx)?,
+        synth_manifest_metadata(crate_name, version, gctx)?,
         Default::default(),
         Default::default(),
         Default::default(),
@@ -71,7 +70,7 @@ fn synth_manifest<'gctx>(
         WorkspaceConfig::Member { root: None },
         Default::default(),
         Default::default(),
-        synth_rust_version(crate_, version, gctx)?,
+        synth_rust_version(crate_name, version, gctx)?,
         Default::default(),
         Default::default(),
         Default::default(),
@@ -83,33 +82,33 @@ fn synth_manifest<'gctx>(
 }
 
 fn synth_summary<'gctx>(
-    crate_: &Crate,
+    crate_name: &str,
     version: &Version,
     gctx: &'gctx GlobalContext,
 ) -> anyhow::Result<Summary> {
     Summary::new(
-        synth_package_id(crate_, version, gctx)?,
-        synth_dependencies(crate_, version, gctx)?,
-        &synth_features(crate_, version, gctx),
+        synth_package_id(crate_name, version, gctx)?,
+        synth_dependencies(crate_name, version, gctx)?,
+        &synth_features(crate_name, version, gctx),
         version.links(),
-        synth_rust_version(crate_, version, gctx)?,
+        synth_rust_version(crate_name, version, gctx)?,
     )
 }
 
 fn synth_package_id<'gctx>(
-    crate_: &Crate,
+    crate_name: &str,
     version: &Version,
     gctx: &'gctx GlobalContext,
 ) -> anyhow::Result<PackageId> {
     PackageId::try_new(
-        crate_.name(),
+        crate_name,
         version.version(),
-        synth_source_id(crate_, version, gctx)?,
+        synth_source_id(crate_name, version, gctx)?,
     )
 }
 
 fn synth_source_id<'gctx>(
-    crate_: &Crate,
+    crate_name: &str,
     version: &Version,
     gctx: &'gctx GlobalContext,
 ) -> anyhow::Result<SourceId> {
@@ -117,7 +116,7 @@ fn synth_source_id<'gctx>(
 }
 
 fn synth_dependencies<'gctx>(
-    crate_: &Crate,
+    crate_name: &str,
     version: &Version,
     gctx: &'gctx GlobalContext,
 ) -> anyhow::Result<Vec<Dependency>> {
@@ -128,7 +127,7 @@ fn synth_dependencies<'gctx>(
             let mut out = Dependency::parse(
                 dependency.crate_name(),
                 Some(dependency.requirement()),
-                synth_source_id(crate_, version, gctx)?,
+                synth_source_id(crate_name, version, gctx)?,
             )?;
 
             out.set_default_features(dependency.has_default_features());
@@ -153,7 +152,7 @@ fn synth_dependencies<'gctx>(
 }
 
 fn synth_features<'gctx>(
-    crate_: &Crate,
+    crate_name: &str,
     version: &Version,
     gctx: &'gctx GlobalContext,
 ) -> BTreeMap<InternedString, Vec<InternedString>> {
@@ -169,13 +168,13 @@ fn synth_features<'gctx>(
 }
 
 // fn synth_workspace_config<'gctx>(
-//     crate_: &Crate,
+//     crate_name: &str,
 //     version: &Version,
 //     gctx: &'gctx GlobalContext,
 // ) -> WorkspaceConfig {
 //     let root_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
 //         .join("lock-files")
-//         .join(crate_.name())
+//         .join(crate_name.name())
 //         .join(version.version());
 //     WorkspaceConfig::Root(WorkspaceRootConfig::new(
 //         &root_dir, &None, &None, &None, &None, &None,
@@ -183,7 +182,7 @@ fn synth_features<'gctx>(
 // }
 
 fn synth_rust_version<'gctx>(
-    crate_: &Crate,
+    crate_name: &str,
     version: &Version,
     gctx: &'gctx GlobalContext,
 ) -> anyhow::Result<Option<RustVersion>> {
@@ -195,7 +194,7 @@ fn synth_rust_version<'gctx>(
 }
 
 fn synth_manifest_metadata<'gctx>(
-    crate_: &Crate,
+    crate_name: &str,
     version: &Version,
     gctx: &'gctx GlobalContext,
 ) -> anyhow::Result<ManifestMetadata> {
@@ -212,6 +211,6 @@ fn synth_manifest_metadata<'gctx>(
         documentation: Default::default(),
         badges: Default::default(),
         links: Default::default(),
-        rust_version: synth_rust_version(crate_, version, gctx)?,
+        rust_version: synth_rust_version(crate_name, version, gctx)?,
     })
 }

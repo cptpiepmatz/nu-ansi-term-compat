@@ -581,12 +581,9 @@ version = "3.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "420219465ccb3a8c300053fadafab5307d9ee2c810666ead7da3a468e796ecdd"
 dependencies = [
- "gix",
  "hex",
  "home",
- "http",
  "memchr",
- "rayon",
  "rustc-hash",
  "rustc-stable-hash",
  "semver",
@@ -2809,10 +2806,13 @@ dependencies = [
  "dashmap",
  "gix",
  "human-repr",
+ "ignore",
  "indicatif",
+ "parking_lot",
  "rayon",
  "semver",
  "serde",
+ "serde-jsonlines",
  "serde_json",
  "serde_spanned",
  "toml",
@@ -3536,6 +3536,16 @@ checksum = "9a8e94ea7f378bd32cbbd37198a4a91436180c5bb472411e48b5ec2e2124ae9e"
 dependencies = [
  "serde_core",
  "serde_derive",
+]
+
+[[package]]
+name = "serde-jsonlines"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "013e069239d98648ea43a9c01845b381445e88de08b5a895ef9302e3bffde03d"
+dependencies = [
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
