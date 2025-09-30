@@ -1,15 +1,8 @@
 use anyhow::Context;
 use cargo::{
-    GlobalContext,
     core::{
-        Manifest, Shell, SourceId, Summary,
-        compiler::{CompileKind, CompileTarget, RustcTargetData},
-        registry::PackageRegistry,
-        resolver::{CliFeatures, ForceAllTargets, HasDevUnits},
-    },
-    ops::write_pkg_lockfile,
-    sources::SourceConfigMap,
-    util::{ConfigValue, Filesystem, context::Definition},
+        compiler::{CompileKind, CompileTarget, RustcTargetData}, registry::PackageRegistry, resolver::{CliFeatures, ForceAllTargets, HasDevUnits, ResolveBehavior}, Manifest, Shell, SourceId, Summary
+    }, ops::write_pkg_lockfile, sources::SourceConfigMap, util::{context::Definition, ConfigValue, Filesystem}, GlobalContext
 };
 use crates_index::{Crate, DependencyKind, Version};
 use dashmap::{DashMap, DashSet};

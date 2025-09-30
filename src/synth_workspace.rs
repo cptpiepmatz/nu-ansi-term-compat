@@ -159,6 +159,13 @@ fn synth_features<'gctx>(
     version
         .features()
         .iter()
+        .chain(
+            version
+                .features2()
+                .iter()
+                .map(|features2| features2.iter())
+                .flatten(),
+        )
         .map(|(key, vals)| {
             let key = InternedString::new(key);
             let vals = vals.iter().map(|val| InternedString::new(val)).collect();
