@@ -52,6 +52,7 @@ const SEARCH_REQ: LazyLock<semver::VersionReq> =
     LazyLock::new(|| semver::VersionReq::parse("^0.50").expect("valid version req"));
 const SEARCH_MSRV: semver::Version = semver::Version::new(1, 62, 1);
 
+const RESOLVE_BEHAVIOR: ResolveBehavior = ResolveBehavior::V2;
 static COMPILE_KIND: LazyLock<CompileKind> = LazyLock::new(|| {
     CompileKind::Target(CompileTarget::new("x86_64-pc-windows-msvc").expect("valid compile target"))
 });

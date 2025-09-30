@@ -74,7 +74,7 @@ fn synth_manifest<'gctx>(
         Default::default(),
         Default::default(),
         Default::default(),
-        Default::default(),
+        crate::RESOLVE_BEHAVIOR.into(),
         Default::default(),
         Default::default(),
         Default::default(),
