@@ -222,6 +222,7 @@ struct ResolveError {
 enum ResolveErrorKind {
     DependencyFullyYanked,
     CyclicDependency,
+    AllPossibleVersionsConflictWithPreviouslySelected,
 }
 
 impl ResolveError {
@@ -232,6 +233,12 @@ impl ResolveError {
     ) -> Result<ResolveError, String> {
         let value = value.to_string();
         let kind = 'kind: {
+            if value.contains("all possible versions conflict with previously selected packages") {
+                break 'kind Some(
+                    ResolveErrorKind::AllPossibleVersionsConflictWithPreviouslySelected,
+                );
+            }
+
             if value.contains("failed to select a version for the requirement")
                 && value.contains("is yanked")
             {
