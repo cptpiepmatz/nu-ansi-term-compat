@@ -2,37 +2,31 @@ use anyhow::Context;
 use cargo::{
     GlobalContext,
     core::{
-        Manifest, Shell, SourceId, Summary,
-        compiler::{CompileKind, CompileTarget, RustcTargetData},
+        Shell,
         registry::PackageRegistry,
-        resolver::{CliFeatures, ForceAllTargets, HasDevUnits, ResolveBehavior},
+        resolver::{CliFeatures, HasDevUnits, ResolveBehavior},
     },
     ops::write_pkg_lockfile,
     sources::SourceConfigMap,
-    util::{ConfigValue, Filesystem, context::Definition},
+    util::{ConfigValue, context::Definition},
 };
-use crates_index::{Crate, DependencyKind, Version};
-use dashmap::{DashMap, DashSet};
 use parking_lot::Mutex;
 use progress::Progress;
-use rayon::iter::{IntoParallelRefIterator, ParallelBridge, ParallelIterator};
-use serde_spanned::Spanned;
+use rayon::iter::{ParallelBridge, ParallelIterator};
+use serde::{Deserialize, Serialize};
 use std::{
     cell::LazyCell,
-    collections::{BTreeMap, HashMap, HashSet, VecDeque},
+    collections::HashMap,
     env,
     fs::File,
-    io::{BufReader, BufWriter},
+    io::BufWriter,
     ops::Deref,
-    path::{Path, PathBuf},
-    str::FromStr,
+    path::PathBuf,
     sync::{
         LazyLock,
         atomic::{AtomicUsize, Ordering},
     },
-    thread,
 };
-use url::Url;
 
 use crate::synth_workspace::synth_workspace;
 
@@ -40,23 +34,17 @@ mod index;
 mod progress;
 mod synth_workspace;
 
-static CWD: LazyLock<PathBuf> = LazyLock::new(|| {
-    env::current_dir().expect("couldn't get the current directory of the process")
-});
-static CARGO_HOMES_PATH: LazyLock<PathBuf> = LazyLock::new(|| CWD.join("cargo-homes"));
-static INDEX_PATH: LazyLock<PathBuf> = LazyLock::new(|| CWD.join("index"));
-static LOCK_FILES_PATH: LazyLock<PathBuf> = LazyLock::new(|| CWD.join("lock-files"));
-static DEPENDENTS_PATH: LazyLock<PathBuf> = LazyLock::new(|| CWD.join("dependents.json"));
-
 const SEARCH_CRATE: &str = "nu-ansi-term";
-const SEARCH_REQ: LazyLock<semver::VersionReq> =
-    LazyLock::new(|| semver::VersionReq::parse("^0.50").expect("valid version req"));
-const SEARCH_MSRV: semver::Version = semver::Version::new(1, 62, 1);
-
 const RESOLVE_BEHAVIOR: ResolveBehavior = ResolveBehavior::V2;
-static COMPILE_KIND: LazyLock<CompileKind> = LazyLock::new(|| {
-    CompileKind::Target(CompileTarget::new("x86_64-pc-windows-msvc").expect("valid compile target"))
-});
+
+type LazyPath = LazyLock<PathBuf>;
+static CWD: LazyPath =
+    LazyPath::new(|| env::current_dir().expect("couldn't get the current directory"));
+static CARGO_HOMES_PATH: LazyPath = LazyPath::new(|| CWD.join("cargo-homes"));
+static INDEX_PATH: LazyPath = LazyPath::new(|| CWD.join("index"));
+static LOCK_FILES_PATH: LazyPath = LazyPath::new(|| CWD.join("lock-files"));
+static DEPENDENTS_PATH: LazyPath = LazyPath::new(|| CWD.join("dependents.json"));
+static UNRESOLVABLE_PATH: LazyPath = LazyPath::new(|| CWD.join("unresolvable.json"));
 
 static NEXT_THREAD_ID: AtomicUsize = AtomicUsize::new(1);
 thread_local! {
@@ -214,15 +202,23 @@ fn main() -> anyhow::Result<()> {
     serde_json::to_writer_pretty(writer, dependents.lock().deref())?;
     progress.finish("Writing", "dependents");
 
+    progress.spinner("Writing", "unresolvable crates");
+    let file = File::create(UNRESOLVABLE_PATH.as_path())?;
+    let writer = BufWriter::new(file);
+    serde_json::to_writer_pretty(writer, resolve_errors.lock().deref())?;
+    progress.finish("Writing", "unresolvable crates");
+
     Ok(())
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct ResolveError {
     crate_name: String,
     version: semver::Version,
     kind: ResolveErrorKind,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
 enum ResolveErrorKind {
     DependencyFullyYanked,
     CyclicDependency,

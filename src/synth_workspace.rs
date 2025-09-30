@@ -1,18 +1,17 @@
-use std::{
-    collections::BTreeMap,
-    path::{Path, PathBuf},
-};
+#![allow(unused)]
+
+use std::{collections::BTreeMap, path::PathBuf};
 
 use cargo::{
     GlobalContext,
     core::{
         Dependency, Manifest, Package, PackageId, SourceId, Summary, Workspace, WorkspaceConfig,
-        WorkspaceRootConfig, dependency::DepKind, manifest::ManifestMetadata,
+        dependency::DepKind, manifest::ManifestMetadata,
     },
-    util::{Filesystem, interning::InternedString},
+    util::interning::InternedString,
 };
 use cargo_util_schemas::manifest::RustVersion;
-use crates_index::{Crate, DependencyKind, Version};
+use crates_index::{DependencyKind, Version};
 use toml::Spanned;
 
 pub fn synth_workspace<'gctx>(
@@ -173,20 +172,6 @@ fn synth_features<'gctx>(
         })
         .collect()
 }
-
-// fn synth_workspace_config<'gctx>(
-//     crate_name: &str,
-//     version: &Version,
-//     gctx: &'gctx GlobalContext,
-// ) -> WorkspaceConfig {
-//     let root_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
-//         .join("lock-files")
-//         .join(crate_name.name())
-//         .join(version.version());
-//     WorkspaceConfig::Root(WorkspaceRootConfig::new(
-//         &root_dir, &None, &None, &None, &None, &None,
-//     ))
-// }
 
 fn synth_rust_version<'gctx>(
     crate_name: &str,

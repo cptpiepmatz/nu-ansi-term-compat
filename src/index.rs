@@ -1,17 +1,10 @@
 use std::{
     collections::{BTreeMap, HashMap},
     num::NonZeroU32,
-    path::Path,
     sync::atomic::AtomicBool,
 };
 
-use anyhow::Context;
-use dashmap::mapref::entry;
-use gix::{
-    Progress, Repository,
-    progress::Discard,
-    remote::{Direction, fetch::Shallow},
-};
+use gix::{progress::Discard, remote::fetch::Shallow};
 use ignore::{DirEntry, WalkBuilder};
 use rayon::iter::{ParallelBridge, ParallelIterator};
 
