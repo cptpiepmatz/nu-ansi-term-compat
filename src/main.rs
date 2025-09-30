@@ -46,6 +46,7 @@ static CWD: LazyLock<PathBuf> = LazyLock::new(|| {
 static CARGO_HOMES_PATH: LazyLock<PathBuf> = LazyLock::new(|| CWD.join("cargo-homes"));
 static INDEX_PATH: LazyLock<PathBuf> = LazyLock::new(|| CWD.join("index"));
 static LOCK_FILES_PATH: LazyLock<PathBuf> = LazyLock::new(|| CWD.join("lock-files"));
+static DEPENDENTS_PATH: LazyLock<PathBuf> = LazyLock::new(|| CWD.join("dependents.json"));
 
 const SEARCH_CRATE: &str = "nu-ansi-term";
 const SEARCH_REQ: LazyLock<semver::VersionReq> =
@@ -124,7 +125,7 @@ fn main() -> anyhow::Result<()> {
 
     let (step, warn) = progress.bar(index.len(), "Resolving", "crate dependencies");
     let resolve_errors = Mutex::<Vec<ResolveError>>::default();
-    let dependents = Mutex::<Vec<&str>>::default();
+    let dependents = Mutex::<Vec<(&str, &semver::Version)>>::default();
     index
         .iter()
         .flat_map(|(crate_name, versions)| {
@@ -197,7 +198,7 @@ fn main() -> anyhow::Result<()> {
                         .find(|package_id| package_id.name().as_str() == SEARCH_CRATE)
                         .is_some()
                     {
-                        dependents.lock().push(crate_name);
+                        dependents.lock().push((crate_name, semver));
                     }
 
                     anyhow::Result::<_>::Ok(())
@@ -215,6 +216,12 @@ fn main() -> anyhow::Result<()> {
             resolve_errors.lock().len()
         ),
     );
+
+    progress.spinner("Writing", "dependents");
+    let file = File::create(DEPENDENTS_PATH.as_path())?;
+    let writer = BufWriter::new(file);
+    serde_json::to_writer_pretty(writer, dependents.lock().deref())?;
+    progress.finish("Writing", "dependents");
 
     Ok(())
 }
