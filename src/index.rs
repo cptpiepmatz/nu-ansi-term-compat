@@ -1,4 +1,9 @@
-use std::{collections::{BTreeMap, HashMap}, num::NonZeroU32, path::Path, sync::atomic::AtomicBool};
+use std::{
+    collections::{BTreeMap, HashMap},
+    num::NonZeroU32,
+    path::Path,
+    sync::atomic::AtomicBool,
+};
 
 use anyhow::Context;
 use dashmap::mapref::entry;
@@ -57,7 +62,7 @@ pub fn parse_index(
     step: impl Fn() + Sync,
 ) -> anyhow::Result<HashMap<String, BTreeMap<semver::Version, crates_index::Version>>> {
     walk_index()
-    .par_bridge()
+        .par_bridge()
         .map(|entry| {
             step();
             let entry = entry?;
