@@ -223,6 +223,7 @@ enum ResolveErrorKind {
     DependencyFullyYanked,
     CyclicDependency,
     AllPossibleVersionsConflictWithPreviouslySelected,
+    NoMatchingPackageFound,
 }
 
 impl ResolveError {
@@ -247,6 +248,10 @@ impl ResolveError {
 
             if value.contains("cyclic package dependency") {
                 break 'kind Some(ResolveErrorKind::CyclicDependency);
+            }
+
+            if value.contains("no matching package named") {
+                break 'kind Some(ResolveErrorKind::NoMatchingPackageFound);
             }
 
             None
