@@ -1,8 +1,15 @@
 use anyhow::Context;
 use cargo::{
+    GlobalContext,
     core::{
-        compiler::{CompileKind, CompileTarget, RustcTargetData}, registry::PackageRegistry, resolver::{CliFeatures, ForceAllTargets, HasDevUnits, ResolveBehavior}, Manifest, Shell, SourceId, Summary
-    }, ops::write_pkg_lockfile, sources::SourceConfigMap, util::{context::Definition, ConfigValue, Filesystem}, GlobalContext
+        Manifest, Shell, SourceId, Summary,
+        compiler::{CompileKind, CompileTarget, RustcTargetData},
+        registry::PackageRegistry,
+        resolver::{CliFeatures, ForceAllTargets, HasDevUnits, ResolveBehavior},
+    },
+    ops::write_pkg_lockfile,
+    sources::SourceConfigMap,
+    util::{ConfigValue, Filesystem, context::Definition},
 };
 use crates_index::{Crate, DependencyKind, Version};
 use dashmap::{DashMap, DashSet};
@@ -132,55 +139,60 @@ fn main() -> anyhow::Result<()> {
         .par_bridge()
         .try_for_each(|(crate_name, semver, version)| {
             step();
-            GLOBAL_CONTEXT.with(|gctx| {
-                let gctx = gctx.as_ref().map_err(|err| anyhow::anyhow!("{err}"))?;
+            GLOBAL_CONTEXT
+                .with(|gctx| {
+                    let gctx = gctx.as_ref().map_err(|err| anyhow::anyhow!("{err}"))?;
 
-                let workspace = synth_workspace(crate_name, version, &gctx)?;
-                let resolve = match cargo::ops::load_pkg_lockfile(&workspace)? {
-                    Some(resolve) => resolve,
-                    None => {
-                        let mut registry = PackageRegistry::new_with_source_config(
-                            &gctx,
-                            SourceConfigMap::new(&gctx)?,
-                        )?;
-                        registry.lock_patches();
-                        let resolve = cargo::ops::resolve_with_previous(
-                            &mut registry,
-                            &workspace,
-                            &CliFeatures {
-                                features: Default::default(),
-                                all_features: true,
-                                uses_default_features: true,
-                            },
-                            HasDevUnits::No,
-                            None,
-                            None,
-                            &[],
-                            false,
-                        );
+                    let workspace = synth_workspace(crate_name, version, &gctx)?;
+                    let resolve = match cargo::ops::load_pkg_lockfile(&workspace)? {
+                        Some(resolve) => resolve,
+                        None => {
+                            let mut registry = PackageRegistry::new_with_source_config(
+                                &gctx,
+                                SourceConfigMap::new(&gctx)?,
+                            )?;
+                            registry.lock_patches();
+                            let resolve = cargo::ops::resolve_with_previous(
+                                &mut registry,
+                                &workspace,
+                                &CliFeatures {
+                                    features: Default::default(),
+                                    all_features: true,
+                                    uses_default_features: true,
+                                },
+                                HasDevUnits::No,
+                                None,
+                                None,
+                                &[],
+                                false,
+                            );
 
-                        match resolve {
-                            Err(err) => {
-                                let err =
-                                    ResolveError::from_str(crate_name.clone(), semver.clone(), err)
-                                        .map_err(|err| anyhow::Error::msg(err))?;
-                                let mut resolve_errors = resolve_errors.lock();
-                                resolve_errors.push(err);
-                                return Ok(());
-                            }
-                            Ok(mut resolve) => {
-                                write_pkg_lockfile(&workspace, &mut resolve)?;
-                                resolve
+                            match resolve {
+                                Err(err) => {
+                                    let err = ResolveError::from_str(
+                                        crate_name.clone(),
+                                        semver.clone(),
+                                        err,
+                                    )
+                                    .map_err(|err| anyhow::Error::msg(err))?;
+                                    let mut resolve_errors = resolve_errors.lock();
+                                    resolve_errors.push(err);
+                                    return Ok(());
+                                }
+                                Ok(mut resolve) => {
+                                    write_pkg_lockfile(&workspace, &mut resolve)?;
+                                    resolve
+                                }
                             }
                         }
-                    }
-                };
+                    };
 
-                // let uses_nu_ansi_term = resolve.iter().find(|package_id| package_id.name().as_str() == "nu-ansi-term");
-                // println!("{} uses nu-ansi-term? {}", crate_.name(), uses_nu_ansi_term.is_some());
+                    // let uses_nu_ansi_term = resolve.iter().find(|package_id| package_id.name().as_str() == "nu-ansi-term");
+                    // println!("{} uses nu-ansi-term? {}", crate_.name(), uses_nu_ansi_term.is_some());
 
-                anyhow::Result::<_>::Ok(())
-            }).with_context(|| format!("error while resolving {}@{}", crate_name, semver))?;
+                    anyhow::Result::<_>::Ok(())
+                })
+                .with_context(|| format!("error while resolving {}@{}", crate_name, semver))?;
             anyhow::Result::<_>::Ok(())
         })?;
     drop((step, warn));
