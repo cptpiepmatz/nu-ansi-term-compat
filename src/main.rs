@@ -226,6 +226,7 @@ enum ResolveErrorKind {
     NoMatchingPackageFound,
     CandidateVersionsFoundDidntMatch,
     FeatureConflict,
+    IndexEntryIsInvalid,
 }
 
 impl ResolveError {
@@ -264,6 +265,10 @@ impl ResolveError {
 
             if value.contains("no matching package named") {
                 break 'kind Some(ResolveErrorKind::NoMatchingPackageFound);
+            }
+
+            if value.contains("index entry is invalid") {
+                break 'kind Some(ResolveErrorKind::IndexEntryIsInvalid);
             }
 
             None
