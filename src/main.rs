@@ -86,7 +86,11 @@ thread_local! {
                                 HashMap::from_iter([(
                                     "local-registry".to_string(),
                                     ConfigValue::String(
-                                        "D:/Projects/nu-ansi-term-compat/".to_string(),
+                                        INDEX_PATH
+                                          .parent()
+                                          .expect("not root")
+                                          .to_string_lossy()
+                                          .to_string(),
                                         def.clone()
                                     )
                                 )]),
