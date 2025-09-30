@@ -150,46 +150,38 @@ fn main() -> anyhow::Result<()> {
                     let gctx = gctx.as_ref().map_err(|err| anyhow::anyhow!("{err}"))?;
 
                     let workspace = synth_workspace(crate_name, version, &gctx)?;
-                    let resolve = match cargo::ops::load_pkg_lockfile(&workspace)? {
-                        Some(resolve) => resolve,
-                        None => {
-                            let mut registry = PackageRegistry::new_with_source_config(
-                                &gctx,
-                                SourceConfigMap::new(&gctx)?,
-                            )?;
-                            registry.lock_patches();
-                            let resolve = cargo::ops::resolve_with_previous(
-                                &mut registry,
-                                &workspace,
-                                &CliFeatures {
-                                    features: Default::default(),
-                                    all_features: true,
-                                    uses_default_features: true,
-                                },
-                                HasDevUnits::No,
-                                None,
-                                None,
-                                &[],
-                                false,
-                            );
+                    let mut registry = PackageRegistry::new_with_source_config(
+                        &gctx,
+                        SourceConfigMap::new(&gctx)?,
+                    )?;
+                    registry.lock_patches();
+                    let resolve = cargo::ops::resolve_with_previous(
+                        &mut registry,
+                        &workspace,
+                        &CliFeatures {
+                            features: Default::default(),
+                            all_features: true,
+                            uses_default_features: true,
+                        },
+                        HasDevUnits::No,
+                        None,
+                        None,
+                        &[],
+                        false,
+                    );
 
-                            match resolve {
-                                Err(err) => {
-                                    let err = ResolveError::from_str(
-                                        crate_name.clone(),
-                                        semver.clone(),
-                                        err,
-                                    )
+                    let resolve = match resolve {
+                        Err(err) => {
+                            let err =
+                                ResolveError::from_str(crate_name.clone(), semver.clone(), err)
                                     .map_err(|err| anyhow::Error::msg(err))?;
-                                    let mut resolve_errors = resolve_errors.lock();
-                                    resolve_errors.push(err);
-                                    return Ok(());
-                                }
-                                Ok(mut resolve) => {
-                                    write_pkg_lockfile(&workspace, &mut resolve)?;
-                                    resolve
-                                }
-                            }
+                            let mut resolve_errors = resolve_errors.lock();
+                            resolve_errors.push(err);
+                            return Ok(());
+                        }
+                        Ok(mut resolve) => {
+                            write_pkg_lockfile(&workspace, &mut resolve)?;
+                            resolve
                         }
                     };
 
