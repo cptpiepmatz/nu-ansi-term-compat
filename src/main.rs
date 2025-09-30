@@ -158,6 +158,7 @@ fn main() -> anyhow::Result<()> {
                     );
 
                     let resolve = match resolve {
+                        Ok(resolve) => resolve,
                         Err(err) => {
                             let err =
                                 ResolveError::from_str(crate_name.clone(), semver.clone(), err)
@@ -165,10 +166,6 @@ fn main() -> anyhow::Result<()> {
                             let mut resolve_errors = resolve_errors.lock();
                             resolve_errors.push(err);
                             return Ok(());
-                        }
-                        Ok(mut resolve) => {
-                            write_pkg_lockfile(&workspace, &mut resolve)?;
-                            resolve
                         }
                     };
 
