@@ -225,6 +225,7 @@ struct ResolveError {
 
 enum ResolveErrorKind {
     DependencyFullyYanked,
+    CyclicDependency,
 }
 
 impl ResolveError {
@@ -234,16 +235,26 @@ impl ResolveError {
         value: impl ToString,
     ) -> Result<ResolveError, String> {
         let value = value.to_string();
-        if value.contains("failed to select a version for the requirement")
-            && value.contains("is yanked")
-        {
-            return Ok(ResolveError {
+        let kind = 'kind: {
+            if value.contains("failed to select a version for the requirement")
+                && value.contains("is yanked")
+            {
+                break 'kind Some(ResolveErrorKind::DependencyFullyYanked);
+            };
+
+            if value.contains("cyclic package dependency") {
+                break 'kind Some(ResolveErrorKind::CyclicDependency);
+            }
+
+            None
+        };
+        match kind {
+            None => Err(value),
+            Some(kind) => Ok(ResolveError {
                 crate_name,
                 version,
-                kind: ResolveErrorKind::DependencyFullyYanked,
-            });
+                kind,
+            }),
         }
-
-        Err(value)
     }
 }
