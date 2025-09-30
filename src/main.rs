@@ -141,7 +141,6 @@ fn main() -> anyhow::Result<()> {
                 }
             }
         })
-        .take(1000)
         .par_bridge()
         .try_for_each(|(crate_name, semver, version)| {
             step();
