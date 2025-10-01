@@ -131,7 +131,7 @@ fn main() -> anyhow::Result<()> {
         .par_bridge()
         .try_for_each(|(crate_name, semver, version)| {
             step();
-            GLOBAL_CONTEXT
+            let resolve_res = GLOBAL_CONTEXT
                 .with(|gctx| {
                     let gctx = gctx.as_ref().map_err(|err| anyhow::anyhow!("{err}"))?;
 
@@ -177,8 +177,11 @@ fn main() -> anyhow::Result<()> {
                     }
 
                     anyhow::Result::<_>::Ok(())
-                })
-                .with_context(|| format!("error while resolving {}@{}", crate_name, semver))?;
+                });
+
+                if let Err(err) = resolve_res {
+                    warn(format!("error while resolving {}@{}: {}", crate_name, semver, err));
+                }
             anyhow::Result::<_>::Ok(())
         })?;
     drop((step, warn));
@@ -225,6 +228,7 @@ enum ResolveErrorKind {
     FeatureConflict,
     IndexEntryIsInvalid,
     InvalidTargetSpecifier,
+    NotAFeature,
 }
 
 impl ResolveError {
@@ -275,6 +279,10 @@ impl ResolveError {
 
             if value.contains("invalid target specifier") {
                 break 'kind Some(ResolveErrorKind::InvalidTargetSpecifier);
+            }
+
+            if value.contains("which is neither a dependency nor another feature") {
+                break 'kind Some(ResolveErrorKind::NotAFeature);
             }
 
             None
