@@ -224,6 +224,7 @@ enum ResolveErrorKind {
     CandidateVersionsFoundDidntMatch,
     FeatureConflict,
     IndexEntryIsInvalid,
+    InvalidTargetSpecifier,
 }
 
 impl ResolveError {
@@ -270,6 +271,10 @@ impl ResolveError {
 
             if value.contains("index entry is invalid") {
                 break 'kind Some(ResolveErrorKind::IndexEntryIsInvalid);
+            }
+
+            if value.contains("invalid target specifier") {
+                break 'kind Some(ResolveErrorKind::InvalidTargetSpecifier);
             }
 
             None
