@@ -6,7 +6,6 @@ use cargo::{
         registry::PackageRegistry,
         resolver::{CliFeatures, HasDevUnits, ResolveBehavior},
     },
-    ops::write_pkg_lockfile,
     sources::SourceConfigMap,
     util::{ConfigValue, context::Definition},
 };
@@ -218,6 +217,7 @@ struct ResolveError {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 enum ResolveErrorKind {
     DependencyFullyYanked,
+    UnavailableDependency,
     CyclicDependency,
     AllPossibleVersionsConflictWithPreviouslySelected,
     NoMatchingPackageFound,
@@ -250,11 +250,15 @@ impl ResolveError {
                 );
             }
 
-            if value.contains("failed to select a version for the requirement")
-                && value.contains("is yanked")
-            {
-                break 'kind Some(ResolveErrorKind::DependencyFullyYanked);
-            };
+            if value.contains("failed to select a version for the requirement") {
+                if value.contains("is yanked") {
+                    break 'kind Some(ResolveErrorKind::DependencyFullyYanked);
+                }
+
+                if value.contains("is unavailable") {
+                    break 'kind Some(ResolveErrorKind::UnavailableDependency);
+                }
+            }
 
             if value.contains("cyclic package dependency") {
                 break 'kind Some(ResolveErrorKind::CyclicDependency);
